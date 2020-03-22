@@ -1,9 +1,17 @@
 #include "variables.h"
-#include "src/LoRa/LoRa.h"
-#include "src/mavlink/mavlink.h"
 
-#define LORA_FREQUENCY          915E6
-#define LORA_BANDWIDTH          125E3
+#ifdef LINK_ENABLED
+
+#include "src/LoRa/LoRa.h"
+
+#ifdef USE_MAVLINK
+  #include "src/mavlink/mavlink.h"
+#endif
+
+#define LORA_MIN_FREQUENCY      915000
+#define LORA_MAX_FREQUENCY      917000
+#define LORA_FREQUENCY          915000
+#define LORA_BANDWIDTH          250
 #define LORA_SPREADING_FACTOR   7
 #define LORA_CODING_RATE        5
 #define LORA_SYNC_WORD          0x77
@@ -17,10 +25,18 @@ uint16_t rcvd = 0;
 uint16_t sent = 0;
 int rssi = 0;
 int rssiPct = 0;
+long freq = LORA_FREQUENCY;
+long minFreq = LORA_MIN_FREQUENCY;
+long maxFreq = LORA_MAX_FREQUENCY;
+long bandwidth = LORA_BANDWIDTH;
+int snr = 0;
+uint32_t beginDwell = 0;
 
 void linkInit() {
-  LoRa.setPins(LORA_SS_PIN, LORA_RST_PIN, LORA_INT_PIN);  
   pinMode(LORA_RSSI_PIN, OUTPUT);
+  LoRa.setPins(LORA_SS_PIN, LORA_RST_PIN, LORA_INT_PIN);  
+  LoRa.onTxDone(onTxDone);
+  LoRa.onReceive(onReceive);
   
   #if defined(AIR_MODULE)
   RX_LED_INIT;
@@ -29,14 +45,13 @@ void linkInit() {
 }
 
 void linkBegin() {
-  LoRa.begin(LORA_FREQUENCY);
-  LoRa.setSignalBandwidth(LORA_BANDWIDTH);
+  LoRa.begin(freq * 1000);
+  LoRa.setSignalBandwidth(bandwidth * 1000);
   LoRa.setSpreadingFactor(LORA_SPREADING_FACTOR); 
   LoRa.setCodingRate4(LORA_CODING_RATE); 
   LoRa.setSyncWord(LORA_SYNC_WORD);
-  LoRa.onTxDone(onTxDone);
-  LoRa.onReceive(onReceive);
   LoRa.receive();
+  beginDwell = millis();
 
   #if defined(AIR_MODULE)
   RX_LED_ON;
@@ -45,6 +60,27 @@ void linkBegin() {
 
 void linkEnd() {
   LoRa.end();
+  beginDwell = 0;
+
+  #if defined(AIR_MODULE)
+  RX_LED_OFF;
+  #endif
+}
+
+void freqUp() {
+  if (freq + bandwidth <= maxFreq) {
+    linkEnd();
+    freq = freq + bandwidth;
+    linkBegin();
+  }
+}
+
+void freqDown() {
+  if (freq - bandwidth >= minFreq) {
+    linkEnd();
+    freq = freq - bandwidth;
+    linkBegin();
+  }
 }
 
 void onTxDone() {
@@ -56,7 +92,19 @@ void onTxDone() {
   #endif
 }
 
-void loraSend() {
+void loraSend(const uint8_t *buffer, size_t size) {
+  while (LoRa.beginPacket() == 0) { }
+  LoRa.write(buffer, size);
+  LoRa.endPacket(true);
+  transmitting = true;
+  sent++;
+
+  #if defined(AIR_MODULE)
+  RX_LED_OFF;
+  #endif  
+}
+
+void linkSend() {
   mavlink_message_t msg;
   mavlink_status_t status;
   char buf[MAX_BUF_SIZE];
@@ -74,16 +122,7 @@ void loraSend() {
         Serial.println(buf1);
         #endif
             
-        while (LoRa.beginPacket() == 0) {
-        }
-        LoRa.write(buf, len);
-        LoRa.endPacket(true);
-        transmitting = true;
-        sent++;
-
-        #if defined(AIR_MODULE)
-        RX_LED_OFF;
-        #endif
+        loraSend(buf, len);
       }
       n = 0;
     }
@@ -91,6 +130,11 @@ void loraSend() {
       n ++;
     }
   }
+}
+
+void writeSerial(const uint8_t *buffer, size_t size) {
+  SERIAL_PORT.write(buffer, size);
+  rcvd++;
 }
 
 void onReceive(int packetSize) {
@@ -105,7 +149,7 @@ void onReceive(int packetSize) {
   #endif
 
   #if defined(AIR_MODULE)
-  RX_LED_ON;
+  RX_LED_OFF;
   #endif
   
   for (int i = 0; i < packetSize; i++) {
@@ -120,7 +164,7 @@ void onReceive(int packetSize) {
       #endif
             
       if (len < MAX_BUF_SIZE) {
-        SERIAL_PORT.write(buf, len);
+        writeSerial(buf, len);
       }
       rcvd++;
       break;
@@ -128,7 +172,7 @@ void onReceive(int packetSize) {
   }
 
   #if defined(AIR_MODULE)
-  RX_LED_OFF;
+  RX_LED_ON;
   #endif
 }
 
@@ -138,19 +182,26 @@ int rssiPercentage() {
 }
 
 void linkLoop() {
-  if (!transmitting) {
-    loraSend();
+  if (beginDwell == 0) {
+    
   }
-  if (millis() - lastRSSIUpdate > 500) {
-    rssi = LoRa.packetRssi();
-    rssiPct = rssiPercentage();
-    analogWrite(LORA_RSSI_PIN, (rssiPct * 255) / 100); // 0 - 255    
-    lastRSSIUpdate = millis();
+  else {
+    if (!transmitting) {
+      linkSend();
+    }
+    if (millis() - lastRSSIUpdate > 500) {
+      rssi = LoRa.packetRssi();
+      rssiPct = rssiPercentage();
+      analogWrite(LORA_RSSI_PIN, (rssiPct * 255) / 100); // 0 - 255    
+      lastRSSIUpdate = millis();
 
-    #if defined(DEBUG_RX)
-    char buf1[200];
-    snprintf(buf1, 200, "RSSI: %d %d%s", rssi, rssiPct, "%");
-    Serial.println(buf1);
-    #endif
+      #if defined(DEBUG_RX)
+      char buf1[200];
+      snprintf(buf1, 200, "RSSI: %d %d%s", rssi, rssiPct, "%");
+      Serial.println(buf1);
+      #endif
+    }
   }
 }
+
+#endif

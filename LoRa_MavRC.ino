@@ -8,6 +8,7 @@
 #include "tactile.h"
 
 volatile uint16_t rcValues[RC_CHANNELS_COUNT] = {0};
+volatile bool rcUpdated = false;
 
 #ifdef DISPLAY_ENABLED
 Display disp;
@@ -19,23 +20,36 @@ Tactile button2(BUTTON_2_PIN);
 
 uint8_t mode = MODE_IDLE;
 uint8_t lastMode = -1;
+bool modeSelector = false;
+bool lastModeSelector = false;
+int selectedMode = mode;
+int lastSelectedMode = -1;
+bool freqSelector = false;
 
 #endif
 
 void setup() {
-  SERIAL_PORT.begin(57600);
 
   #if defined(DEBUG_MODE)
   Serial.begin(57600);
   #endif
   
+  #ifdef LINK_ENABLED
   linkInit();
+  #endif
 
-  #if defined(AIR_MODULE)
+  #if defined(AIR_MODULE) ///////////////////////////////////////////////////////////////
 
+  #ifdef LINK_ENABLED
+  SERIAL_PORT.begin(57600);
   linkBegin();
+  #endif
 
-  #elif defined(GND_MODULE)
+  #elif defined(GND_MODULE) //////////////////////////////////////////////////////////////
+
+  button0.start();
+  button1.start();
+  button2.start();
 
   #ifdef DISPLAY_ENABLED
   disp.init();
@@ -47,70 +61,132 @@ void setup() {
   #endif
   
   #ifdef JOYSTICK_ENABLED
-  button0.start();
-  button1.start();
-  button2.start();
   joystickInit();
   #endif
   
-  #endif
+  #endif ////////////////////////////////////////////////////////////////////////////////
 
 }
 
 void loop() {
 
-  #if defined(AIR_MODULE)
+  #if defined(AIR_MODULE) /////////////////////////////////////////////////////////////
 
+  #ifdef LINK_ENABLED
   linkLoop();
+  #endif
 
-  #elif defined(GND_MODULE)
+  #elif defined(GND_MODULE) //////////////////////////////////////////////////////////////
 
   button0.loop();
   button1.loop();
   button2.loop(); 
-  if (button0.getState() == TACTILE_STATE_LONG_PRESS) {
-    mode = MODE_TELEM;
+
+  if (button0.getState() == TACTILE_STATE_SHORT_PRESS) {
+    if (modeSelector) {
+      selectedMode --;
+      if (selectedMode < MODE_IDLE) {
+        selectedMode = MODE_MAX;
+      }
+      disp.forceUpdate = true;
+    }
+    else if (freqSelector) {
+      #ifdef LINK_ENABLED
+      freqUp();
+      #endif
+    }
   }
-  if (button1.getState() == TACTILE_STATE_LONG_PRESS) {
-    mode = MODE_RC;
+  if (button1.getState() == TACTILE_STATE_SHORT_PRESS) {
+    if (modeSelector) {
+      selectedMode ++;
+      if (selectedMode > MODE_MAX) {
+        selectedMode = MODE_IDLE;
+      }
+      disp.forceUpdate = true;
+    }
+    else if (freqSelector) {
+      #ifdef LINK_ENABLED
+      freqDown();
+      #endif
+    }
   }
-  if (button2.getState() == TACTILE_STATE_LONG_PRESS) {
-    mode = MODE_SIM;
+  if (button2.getState() == TACTILE_STATE_SHORT_PRESS) {
+    if (modeSelector) {
+      modeSelector = false;
+      mode = selectedMode;
+      disp.forceUpdate = true;
+    }
+    else if (freqSelector) {
+      freqSelector = false;
+    }
+    else if (mode == MODE_TELEM || mode == MODE_RC) {
+      freqSelector = true;
+    }
+  }
+  else if (button2.getState() == TACTILE_STATE_LONG_PRESS) {
+    if (!modeSelector) {
+      lastSelectedMode = -1;
+      selectedMode = mode;
+      modeSelector = true;
+      disp.forceUpdate = true;
+    }
+  }
+
+  if (lastModeSelector != modeSelector) {
+    lastModeSelector = modeSelector;
+    disp.forceUpdate = true;
+  }
+  
+  if (lastMode != mode) {
+    if (lastMode == MODE_SIM) {
+      #ifdef JOYSTICK_ENABLED
+      joystickEnd();
+      #endif
+    }
+    if (lastMode == MODE_TELEM || lastMode == MODE_RC) {
+      if (mode != MODE_TELEM && mode != MODE_RC) {
+        #ifdef LINK_ENABLED
+        linkEnd();
+        SERIAL_PORT.end();
+        #endif
+      }
+    }
+    else {
+      if (mode == MODE_TELEM || mode == MODE_RC) {
+        #ifdef LINK_ENABLED
+        SERIAL_PORT.begin(57600);
+        linkBegin();
+        #endif
+      }
+    }
+    if (mode == MODE_SIM) {
+      #ifdef JOYSTICK_ENABLED
+      joystickBegin();
+      #endif
+    }
+
+    disp.forceUpdate = true;
+    lastMode = mode;
+  }
+  
+  if (rcUpdated) {
+    if (mode == MODE_SIM) {
+      #ifdef JOYSTICK_ENABLED
+      joystickSend();
+      #endif
+    }
+    rcUpdated = false;
+  }
+  
+  if (mode == MODE_TELEM || mode == MODE_RC) {
+    #ifdef LINK_ENABLED
+    linkLoop();
+    #endif
   }
 
   #ifdef DISPLAY_ENABLED
   disp.loop();
   #endif
-  
-  #ifdef JOYSTICK_ENABLED
 
-  if (lastMode != mode) {
-    if (mode == MODE_SIM) {
-      SERIAL_PORT.end();
-      joystickBegin();
-    }
-    else if (mode == MODE_TELEM) {
-      linkBegin();
-    }
-
-    if (lastMode == MODE_SIM) {
-      joystickEnd();
-      SERIAL_PORT.begin(57600);
-    }
-    else if (lastMode == MODE_TELEM) {
-      linkEnd();
-    }
-  }
-  if (mode == MODE_SIM) {
-    joystickSend();
-  }
-  else if (mode == MODE_TELEM) {
-    linkLoop();
-  }
-  
-  #endif
-  
-  lastMode = mode;
-
-  #endif
+  #endif ////////////////////////////////////////////////////////////////////////
 }

@@ -38,6 +38,7 @@ ISR(TIMER3_CAPT_vect) {
   } timeValue;
 
   uint16_t now, diff;
+  uint16_t rcValue;
   static uint16_t last = 0;
   static uint8_t chan = 0;
 
@@ -56,7 +57,11 @@ ISR(TIMER3_CAPT_vect) {
     if (diff > (MIN_PULSE_WIDTH * TIMER_COUNT_DIVIDER - RC_THRESHOLD)
         && diff < (MAX_PULSE_WIDTH * TIMER_COUNT_DIVIDER + RC_THRESHOLD)
         && chan < RC_CHANNELS_COUNT) {
-      rcValues[chan] = adjust(diff, chan);  // Store detected value
+      rcValue = adjust(diff, chan);  // Store detected value
+      if (rcValue != rcValues[chan]) {
+        rcValues[chan] = rcValue;
+        rcUpdated = true;        
+      }
     }
     chan++;  // No value detected within expected range, move to next channel
   }

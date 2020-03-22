@@ -10,7 +10,7 @@ enum tactileStateFlags {
 };
 
 #define TACTILE_MIN_PRESS_TIME 50
-#define TACTILE_LONG_PRESS_TIME 1000
+#define TACTILE_LONG_PRESS_TIME 500
 
 class Tactile {
   public:
