@@ -3,33 +3,167 @@
 
 #include <Arduino.h>
 
-// -- Select one module type ----------------------------------------------------------------------
+// -- Select module and config --------------------------------------------------------------------
 
-//#define AIR_MODULE  
-#define GND_MODULE    
-
-#define USE_MAVLINK
+//#define LORA32U4_AIR_MODULE     // use Lora32U4 as "standard"
+//#define CUSTOM328P_AIR_MODULE
+//#define LORA32U4_GND_MODULE 
+#define CUSTOM32U4_GND_MODULE
+//#define PROMICRO_SIM_MODULE
+//#define OTHER32U4_SIM_MODULE
 
 //#define DEBUG_MODE
 
+#define MAV_SYSTEM_ID   249
 
-// -- ATMega32U4 ----------------------------------------------------------------------------------
+// -- Hardware configuration ----------------------------------------------------------------------
 
-#if defined(ARDUINO_AVR_PROMICRO) || defined(ARDUINO_AVR_LEONARDO) || defined(ARDUINO_AVR_MICRO)
+#if defined(LORA32U4_AIR_MODULE) || defined(CUSTOM328P_AIR_MODULE)
 
-  #define LORA_SS_PIN     8
-  #define LORA_RST_PIN    4   
-  #define LORA_INT_PIN    7   
-  #define LORA_RSSI_PIN   9
+  #define AIR_MODULE 
+  #define RADIO_ENABLED
 
-// -- ATMega328P -----------------------------------------------------------------------------------
+#elif defined(LORA32U4_GND_MODULE) || defined(CUSTOM32U4_GND_MODULE)
 
-#elif defined(ARDUINO_AVR_UNO) || defined(ARDUINO_AVR_PRO)
+  #define GND_MODULE
+  #define DISPLAY_ENABLED
+  #define RADIO_ENABLED
+  #define SEND_HEARTBEAT
 
-  #define LORA_SS_PIN     10
-  #define LORA_RST_PIN    4   
-  #define LORA_INT_PIN    3   
-  #define LORA_RSSI_PIN   9
+  #if defined(__AVR_ATmega32U4__)
+    #define JOYSTICK_ENABLED
+    #define PPM_ENABLED
+  #endif
+
+#elif defined(PROMICRO_SIM_MODULE) || defined(OTHER32U4_SIM_MODULE)
+
+  #define GND_MODULE
+  #define PASSTHRU_ENABLE
+
+  #if defined(__AVR_ATmega32U4__)
+    #define JOYSTICK_ENABLED
+    #define PPM_ENABLED
+  #endif
+
+#endif
+
+#ifdef PPM_ENABLED
+  #define RC_ENABLED
+#endif
+
+#if defined(CUSTOM32U4_GND_MODULE)
+
+  #ifndef __AVR_ATmega32U4__
+    #error Wrong target board selection.
+  #endif
+
+  #define LORA_SS_PIN       8
+  #define LORA_RST_PIN      5   
+  #define LORA_INT_PIN      7   
+
+  #define PPM_CAPTURE_ICP1
+
+  #define BUTTON_0_PIN      20 // A2
+  #define BUTTON_1_PIN      19 // A1
+  #define BUTTON_2_PIN      18 // A0
+  #define BUTTON_3_PIN      21 // A3
+
+#elif defined(CUSTOM328P_AIR_MODULE)
+
+  #ifndef __AVR_ATmega328P__
+    #error Wrong target board selection.
+  #endif
+
+  #define LORA_SS_PIN       10
+  #define LORA_RST_PIN      4   
+  #define LORA_INT_PIN      3   
+
+  #define RX_LED_PIN        7
+  #define RX_BUTTON_PIN     2
+  #define LORA_RSSI_PIN     9
+
+#elif defined(PROMICRO_SIM_MODULE)
+
+  #ifndef __AVR_ATmega32U4__
+    #error Wrong target board selection.
+  #endif
+
+  #define PPM_CAPTURE_ICP1
+
+#elif defined(OTHER32U4_SIM_MODULE)
+
+  #ifndef __AVR_ATmega32U4__
+    #error Wrong target board selection.
+  #endif
+
+  #define PPM_CAPTURE_ICP3
+
+#else
+
+  #ifndef __AVR_ATmega32U4__
+    #error Wrong target board selection.
+  #endif
+  
+  #ifdef RADIO_ENABLED
+    #define LORA_SS_PIN       8
+    #define LORA_RST_PIN      4   
+    #define LORA_INT_PIN      7
+  #endif
+  
+  #ifdef AIR_MODULE
+    #define RX_LED_PIN        3
+    #define RX_BUTTON_PIN     2
+    #define LORA_RSSI_PIN     9  
+  #endif
+  
+  #ifdef GND_MODULE
+    #define BUTTON_0_PIN      20 // A2
+    #define BUTTON_1_PIN      19 // A1
+    #define BUTTON_2_PIN      18 // A0
+    #define BUTTON_3_PIN      21 // A3
+  #endif
+
+  #ifdef PPM_ENABLED
+    #define PPM_CAPTURE_ICP3
+  #endif
+
+#endif
+
+
+#if defined(__AVR_ATmega32U4__)
+
+  #if defined(AIR_MODULE)         // air module
+    #define SERIAL_PORT           Serial1
+    #define DEBUG_PORT            Serial
+  #endif
+  
+  #if defined(GND_MODULE)         // gnd module
+    #ifdef DEBUG_MODE
+      #define DEBUG_PORT          Serial
+    #else
+      #define SERIAL_PORT         Serial
+    #endif
+    
+    #ifdef PASSTHRU_ENABLE
+      #define SERIAL_PASSTHRU     Serial1
+    #endif
+
+    #ifdef PPM_ENABLED
+      #if defined(PPM_CAPTURE_ICP1)
+        #define PPM_CAPTURE_PIN         4
+      #elif defined(PPM_CAPTURE_ICP3)
+        #define PPM_CAPTURE_PIN         13
+      #endif
+    #endif        
+  #endif
+  
+#elif defined(__AVR_ATmega328P__)
+
+  #ifdef DEBUG_MODE
+    #define DEBUG_PORT            Serial
+  #else
+    #define SERIAL_PORT           Serial
+  #endif    
 
 #endif
 
@@ -38,49 +172,30 @@
 
 #if defined(AIR_MODULE) ////////////////////////////////////////////////////////////////////////////
 
-#define LINK_ENABLED
-
-// Lora + ATMega32U4, Lora32U4
-
-#if defined(ARDUINO_AVR_PROMICRO) || defined(ARDUINO_AVR_LEONARDO) || defined(ARDUINO_AVR_MICRO)
-  #define RX_LED_PIN      3
-  #define RX_BUTTON_PIN    2
-  #define SERIAL_PORT   Serial1
-
-// Lora + ATMega328P
-
-#elif defined(ARDUINO_AVR_UNO) || defined(ARDUINO_AVR_PRO)
-  #define RX_LED_PIN      7
-  #define RX_BUTTON_PIN    2
-  #define SERIAL_PORT     Serial
-
-#endif
-
 #define RX_LED_INIT     pinMode(RX_LED_PIN, OUTPUT)
 #define RX_LED_ON       digitalWrite(RX_LED_PIN, HIGH)
 #define RX_LED_OFF      digitalWrite(RX_LED_PIN, LOW)
 
 
-// -- Ground module related -----------------------------------------------------------------------
+// -- GND module related -----------------------------------------------------------------------
 
 #elif defined(GND_MODULE) /////////////////////////////////////////////////////////////////////////
 
-#define DISPLAY_ENABLED
-#define SERIAL_PORT     Serial
+// -- Modes ------------
+#define MODE_IDLE   0
+#define MODE_TELEM  1
+#define MODE_RC     2
+#define MODE_SIM    3
+#define MODE_MAX    MODE_SIM
 
-#ifndef DEBUG_MODE
-  #define LINK_ENABLED
-#endif
+extern uint8_t mode;
+extern bool modeSelector;
+extern int selectedMode;
 
-// Button pins
-#define BUTTON_0_PIN      12
-#define BUTTON_1_PIN      11
-#define BUTTON_2_PIN      10
+#endif ////////////////////////////////////////////////////////////////////////////////////////////
 
-// Joystick only on ATMega32U4
-#if defined(ARDUINO_AVR_PROMICRO) || defined(ARDUINO_AVR_LEONARDO) || defined(ARDUINO_AVR_MICRO)
-  #define JOYSTICK_ENABLED
-#endif
+
+#ifdef RC_ENABLED
 
 // -- RC ------------------------------------------------------
 #define RC_CHANNELS_COUNT 8
@@ -95,25 +210,16 @@
 extern volatile uint16_t rcValues[RC_CHANNELS_COUNT];
 extern volatile bool rcUpdated;
 
-// PPM Input
-#define PPM_ENABLED
+#endif
 
-// -- Modes -------------------------------------------------
-#define MODE_IDLE   0
-#define MODE_TELEM  1
-#define MODE_RC     2
-#define MODE_SIM    3
-#define MODE_MAX    MODE_SIM
-
-extern uint8_t mode;
-extern bool modeSelector;
-extern int selectedMode;
+#ifdef RADIO_ENABLED
 
 // -- link related --------------------------------------------
 
 extern bool freqSelector;
 extern uint16_t rcvd;
 extern uint16_t sent;
+extern int txRate;
 extern int rssi;
 extern int rssiPct;
 extern long freq;
@@ -122,6 +228,6 @@ extern long maxFreq;
 extern long bandwidth;
 extern int snr;
 
-#endif ////////////////////////////////////////////////////////////////////////////////////////////
+#endif
 
 #endif

@@ -29,14 +29,14 @@ void Display::loop() {
       case MODE_IDLE:
         renderPageIdle();
         break;
-      case MODE_SIM:
-        renderPageSim();
-        break;
       case MODE_TELEM:
         renderPageTelem();
         break;
       case MODE_RC:
         renderPageRC();
+        break;
+      case MODE_SIM:
+        renderPageSim();
         break;
     }
   }
@@ -73,36 +73,19 @@ void Display::renderPageIdle() {
     }
 }
 
-void Display::renderPageSim() {
-  char buf[DISPLAY_COL_COUNT];
-
+void Display::renderTitle() {
   if (forceUpdate) {
     _display.clear();
-    _display.draw1x2String(0, 0, modeTexts[MODE_SIM]);
-  }
-
-  uint8_t x = 0;
-  uint8_t y = 0;
-  for (uint8_t i = 0; i < RC_CHANNELS_COUNT; i ++) {
-    snprintf(buf, DISPLAY_COL_COUNT, "%d: %04d", i + 1, rcValues[i]);
-    _display.drawString(x, y + 3, buf);
-    y ++;
-    if (y >= RC_CHANNELS_COUNT / 2) {
-      x = DISPLAY_COL_COUNT / 2;
-      y = 0;
-    }
+    _display.draw1x2String(0, 0, modeTexts[mode]);
   }
 }
 
 void Display::renderPageTelem() {
   char buf[DISPLAY_COL_COUNT];
 
-  if (forceUpdate) {
-    _display.clear();
-    _display.draw1x2String(0, 0, modeTexts[MODE_TELEM]);
-  }
+  renderTitle();
 
-  #ifdef LINK_ENABLED
+  #ifdef RADIO_ENABLED
   if (freqSelector) {
     snprintf(buf, DISPLAY_COL_COUNT, "Freq: >>%7ld", freq);
   }
@@ -110,7 +93,7 @@ void Display::renderPageTelem() {
     snprintf(buf, DISPLAY_COL_COUNT, "Freq:%10ld", freq);
   }
   _display.drawString(0, 2, buf);
-  snprintf(buf, DISPLAY_COL_COUNT, "B/W :%10d", bandwidth);
+  snprintf(buf, DISPLAY_COL_COUNT, "Rate:%10d", txRate);
   _display.drawString(0, 3, buf);
   snprintf(buf, DISPLAY_COL_COUNT, "Rcvd:%10u", rcvd);
   _display.drawString(0, 4, buf);
@@ -124,10 +107,26 @@ void Display::renderPageTelem() {
 }
 
 void Display::renderPageRC() {
-  if (forceUpdate) {
-    _display.clear();
-    _display.draw1x2String(0, 0, modeTexts[MODE_RC]);
+  renderTitle();
+}
+
+void Display::renderPageSim() {
+  char buf[DISPLAY_COL_COUNT];
+
+  renderTitle();
+  #ifdef RC_ENABLED
+  uint8_t x = 0;
+  uint8_t y = 0;
+  for (uint8_t i = 0; i < RC_CHANNELS_COUNT; i ++) {
+    snprintf(buf, DISPLAY_COL_COUNT, "%d: %04d", i + 1, rcValues[i]);
+    _display.drawString(x, y + 3, buf);
+    y ++;
+    if (y >= RC_CHANNELS_COUNT / 2) {
+      x = DISPLAY_COL_COUNT / 2;
+      y = 0;
+    }
   }
+  #endif
 }
 
 #endif
